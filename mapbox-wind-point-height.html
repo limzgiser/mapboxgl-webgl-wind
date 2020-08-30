@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Add a custom style layer</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <!-- <script src="https://api.mapbox.com/mapbox-gl-js/v1.6.1/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v1.6.1/mapbox-gl.css" rel="stylesheet" /> -->
+    <script src="./lib/mapboxgl-v1.6.js"></script>
+    <link href="./lib/mapbox.gl-v1.6.css" rel="stylesheet" />
+    <script src="./lib/jquery.js"></script>
+    <script src="./lib/d3.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+            background: #000;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <script>
+        mapboxgl.accessToken =
+            'pk.eyJ1IjoibGltemdpc2VyIiwiYSI6ImNqZXFvemJlcjB1bWYyd2x0eGxjeGdvcXIifQ.gSsj63R-2VZV7L7mpSw0Uw';
+        var map = (window.map = new mapboxgl.Map({
+            container: 'map',
+            zoom: 2,
+            center: [121, 31],
+            pitch: 45,
+            style: 'mapbox://styles/mapbox/dark-v10',
+            renderWorldCopies: false,
+            antialias: true, // create the gl context with MSAA antialiasing, so custom layers are antialiased
+        }));
+
+        map.on('load', () => {
+            jQuery.get('./windata/wind.csv', res => {
+                let result = tof32Array(res);
+                let pointLen = result.length / 7;
+                var customLayer = {
+                    id: 'windpoint',
+                    type: 'custom',
+                    onAdd: function (map, gl) {
+                        var vertexSource = `
+                        uniform mat4 u_matrix;
+                        attribute vec2 a_pos;
+                        attribute   vec4  inColor;
+                         varying     vec4  outColor;
+                         attribute float  pointH; 
+                        void main() {   
+                              outColor    =   inColor;
+                              gl_Position = u_matrix * vec4(a_pos,pointH , 1.0); 
+                              gl_PointSize = 2.0;
+                  
+                         }
+                        `;
+
+                        var fragmentSource = `
+                        precision   lowp  float;
+                        varying     vec4  outColor;
+                        void main() {
+                        gl_FragColor = outColor;
+                          //  gl_FragColor = vec4(1.0, 0.0, 0.0, 0.5);
+                        }
+                        `;
+                        var vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                        gl.shaderSource(vertexShader, vertexSource);
+                        gl.compileShader(vertexShader);
+                        var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                        gl.shaderSource(fragmentShader, fragmentSource);
+                        gl.compileShader(fragmentShader);
+                        this.program = gl.createProgram();
+                        gl.attachShader(this.program, vertexShader);
+                        gl.attachShader(this.program, fragmentShader);
+                        gl.linkProgram(this.program);
+
+                        this.aPos = gl.getAttribLocation(this.program, 'a_pos');
+                        this.inColor = gl.getAttribLocation(this.program, 'inColor');
+                        this.pointH = gl.getAttribLocation(this.program, "pointH");
+                        this.buffer = gl.createBuffer();
+                        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+                        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(result), gl.STATIC_DRAW);
+                    },
+
+                    render: function (gl, matrix) {
+                        gl.useProgram(this.program);
+                        gl.uniformMatrix4fv(gl.getUniformLocation(this.program, 'u_matrix'), false, matrix);
+                        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+                        gl.enableVertexAttribArray(this.aPos);
+                        gl.enableVertexAttribArray(this.inColor);
+                        gl.enableVertexAttribArray(this.pointH);
+                        gl.vertexAttribPointer(this.aPos, 2, gl.FLOAT, false, 4 * 7, 0);
+                        gl.vertexAttribPointer(this.inColor, 4, gl.FLOAT, false, 4 * 7, 4 * 2);
+                        gl.vertexAttribPointer(this.pointH, 1, gl.FLOAT, false, 4 * 7, 4 * 6);
+                        // gl.enable(gl.BLEND);
+                        // gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                        gl.drawArrays(gl.POINTS, 0, pointLen);
+                        map.triggerRepaint();
+                        return true;
+                    },
+                };
+                map.addLayer(customLayer);
+            });
+
+            function tof32Array(csvstr) {
+                let tmparr = csvstr.split(/[\n]/);
+                let res = [];
+                for (let i = 0; i < tmparr.length; i += 1) {
+                    let item = tmparr[i];
+                    let tmpitem = item.split(',');
+                    tmpitem[0] = Number(tmpitem[0]);
+                    tmpitem[1] = Number(tmpitem[1]);
+                    tmpitem[2] = Number(tmpitem[2]);
+                    tmpitem[3] = Number(tmpitem[3]);
+                    let nor = mapboxgl.MercatorCoordinate.fromLngLat({
+                        lng: Number(tmpitem[1]),
+                        lat: Number(tmpitem[0]),
+                    });
+                    // tmpitem[2], // 风速
+                    // tmpitem[3]  // 风向
+                    let tmp = [
+                        nor.x,
+                        nor.y,
+                        ...calcColor(tmpitem[2]), // r,g,b,a
+                        tmpitem[2] / 350.0
+                    ];
+                    res.push(...tmp);
+                }
+                return res;
+            }
+            function calcColor(value) {
+                var aa = d3.rgb(255, 0, 0);	//红色
+                var bb = d3.rgb(0, 255, 0);	//绿色
+                var compute = d3.interpolate(aa, bb);
+                var linear = d3.scale.linear()
+                    .domain([0, 30])
+                    .range([1, 0]);
+                let tmpres = compute(linear(value));
+                let rgb = tmpres.split(',');
+                let r = rgb[0].split('(')[1];
+                let g = rgb[1];
+                let b = rgb[2].split(')')[0];
+                return [Number(r) / 255.0, Number(g) / 255.0, Number(b) / 255.0, 1.0]
+            }
+        });
+    </script>
+</body>
+
+</html>

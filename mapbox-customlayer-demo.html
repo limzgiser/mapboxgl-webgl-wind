@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Add a custom style layer</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <script src="./lib/mapboxgl-v1.6.js"></script>
+    <link href="./lib/mapbox.gl-v1.6.css" rel="stylesheet" />
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }  ;
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <script>
+        mapboxgl.accessToken =
+            'pk.eyJ1IjoibGltemdpc2VyIiwiYSI6ImNqZXFvemJlcjB1bWYyd2x0eGxjeGdvcXIifQ.gSsj63R-2VZV7L7mpSw0Uw';
+        var map = (window.map = new mapboxgl.Map({
+            container: 'map',
+            zoom: 0,
+            center: [7.5, 58],
+            style: 'mapbox://styles/mapbox/dark-v10',
+            renderWorldCopies: false,
+            antialias: true  
+        }));
+        animTime = 0
+        var highlightLayer = {
+            id: 'highlight',
+            type: 'custom',
+            onAdd: function (map, gl) {
+                var vertexSource = `
+                uniform mat4 u_matrix;
+                uniform float  anim;
+                attribute vec2 a_pos;
+                void main() {
+                    gl_Position = u_matrix * vec4(a_pos,anim , 1.0);
+                }
+                `
+                var fragmentSource = `
+                void main() {
+                    gl_FragColor = vec4(1.0, 0.0, 0.0, 0.5);
+                }
+                `
+                var vertexShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vertexShader, vertexSource);
+                gl.compileShader(vertexShader);
+                var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fragmentShader, fragmentSource);
+                gl.compileShader(fragmentShader);
+                this.program = gl.createProgram();
+                gl.attachShader(this.program, vertexShader);
+                gl.attachShader(this.program, fragmentShader);
+                gl.linkProgram(this.program);
+                this.aPos = gl.getAttribLocation(this.program, 'a_pos');
+                this.unifromAnim = gl.getUniformLocation(this.program, "anim");
+                var helsinki = mapboxgl.MercatorCoordinate.fromLngLat({
+                    lng: -180.00,
+                    lat: 85
+                });
+                var berlin = mapboxgl.MercatorCoordinate.fromLngLat({
+                    lng: 0,
+                    lat: 0
+                });
+                var kyiv = mapboxgl.MercatorCoordinate.fromLngLat({
+                    lng: -180.00,
+                    lat: -85
+                });
+            
+            
+                this.buffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+                gl.bufferData(
+                    gl.ARRAY_BUFFER,
+                    new Float32Array([
+                        helsinki.x,
+                        helsinki.y,
+                        berlin.x,
+                        berlin.y,
+                        kyiv.x,
+                        kyiv.y
+                    ]),
+                    gl.STATIC_DRAW
+                );
+            },
+            render: function (gl, matrix) {
+                gl.useProgram(this.program);
+                gl.uniformMatrix4fv(
+                    gl.getUniformLocation(this.program, 'u_matrix'),
+                    false,
+                    matrix
+                );
+                animTime += 0.002;
+                animTime = animTime % 0.2;
+                gl.uniform1f(this.unifromAnim, animTime);
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+                gl.enableVertexAttribArray(this.aPos);
+                gl.vertexAttribPointer(this.aPos, 2, gl.FLOAT, false, 0, 0);
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 3);
+                map.triggerRepaint();
+                return true;
+            }
+        };
+        map.on('load', function () {
+            map.addLayer(highlightLayer, 'building');
+        });
+        map.on('click', function (e) {
+        });
+    </script>
+
+</body>
+
+</html>
