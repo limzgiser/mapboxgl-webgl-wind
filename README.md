@@ -1,6 +1,7 @@
 # mapboxgl-webgl-wind 
 - mapboxgl webgl-wind 集成
 - 风力数据可视化
+知乎地址 [https://zhuanlan.zhihu.com/p/165106392](https://zhuanlan.zhihu.com/p/165106392)
 ### mapbox-webgl-wind
 ![Image](https://raw.githubusercontent.com/limzgiser/mapboxgl-webgl-wind/master/img/mapboxgl%2Bwebgl-wind.gif)
 
